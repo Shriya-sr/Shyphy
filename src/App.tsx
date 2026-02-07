@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
+import { SecurityCleanupAlert } from "@/components/SecurityCleanupAlert";
 
 // Pages
 import LandingPage from "./pages/LandingPage";
@@ -31,6 +32,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <SecurityCleanupAlert />
         <BrowserRouter>
           <Routes>
             {/* Public Routes */}

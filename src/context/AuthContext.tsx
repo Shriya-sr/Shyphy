@@ -34,16 +34,92 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper: Remove password field from user object
+function stripPasswordFromUser(user: any): User {
+  const { password, passwordHash, emergencyPassword, ...safeUser } = user;
+  return safeUser as User;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // SECURITY: On mount, clear all old vulnerable localStorage entries
+  useEffect(() => {
+    // List of vulnerable storage keys that may contain passwords
+    const vulnerableKeys = [
+      'shiphy_users',           // Old user list with passwords
+      'shiphy_current_user',    // May contain plaintext password
+      'users',                  // Generic users key
+      'currentUser',            // Generic current user key
+      'user',                   // Generic user key
+      'password',               // Direct password storage
+      'passwords',              // Multiple passwords
+      'credentials',            // Credentials
+      'auth',                   // Auth data (may contain password)
+    ];
+    
+    // Clear any localStorage entry matching vulnerable patterns
+    const keysToClean = Object.keys(localStorage).filter(key => {
+      // Check if key matches vulnerable patterns
+      return vulnerableKeys.some(vKey => 
+        key.toLowerCase().includes(vKey.toLowerCase())
+      );
+    });
+    
+    // Also check localStorage values for plaintext passwords
+    const allKeys = Object.keys(localStorage);
+    allKeys.forEach(key => {
+      try {
+        const value = localStorage.getItem(key);
+        if (!value) return;
+        
+        // Try to parse as JSON and check for password fields
+        try {
+          const parsed = JSON.parse(value);
+          if (typeof parsed === 'object' && parsed !== null) {
+            // If object contains plaintext password/credentials, flag for cleanup
+            if ('password' in parsed || 'passwordHash' in parsed || 'emergencyPassword' in parsed) {
+              keysToClean.push(key);
+            }
+          }
+        } catch {
+          // Not JSON, skip
+        }
+      } catch {
+        // Skip on error
+      }
+    });
+    
+    // Remove duplicates and clean
+    const uniqueKeysToClean = [...new Set(keysToClean)];
+    uniqueKeysToClean.forEach(key => {
+      console.warn(`🔒 SECURITY: Clearing vulnerable localStorage key: ${key}`);
+      localStorage.removeItem(key);
+    });
+    
+    if (uniqueKeysToClean.length > 0) {
+      console.log(`🔒 SECURITY: Cleared ${uniqueKeysToClean.length} vulnerable localStorage entries`);
+    }
+  }, []);
+
   const [users, setUsers] = useState<User[]>([]);
   
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('shiphy_current_user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    
+    try {
+      const parsed = JSON.parse(saved);
+      // SECURITY: Never trust user data from localStorage - remove password if somehow present
+      return stripPasswordFromUser(parsed);
+    } catch {
+      localStorage.removeItem('shiphy_current_user');
+      return null;
+    }
   });
 
   const [authToken, setAuthToken] = useState<string | null>(() => {
-    return localStorage.getItem('shiphy_auth_token');
+    const token = localStorage.getItem('shiphy_auth_token');
+    // SECURITY: Only store token, not passwords
+    return token;
   });
 
   const [systemState, setSystemState] = useState<SystemState>(() => {
@@ -119,7 +195,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [authToken]);
 
   useEffect(() => {
-    localStorage.setItem('shiphy_current_user', JSON.stringify(currentUser));
+    // SECURITY: Only store user info WITHOUT password
+    if (currentUser) {
+      const safeUser = stripPasswordFromUser(currentUser);
+      localStorage.setItem('shiphy_current_user', JSON.stringify(safeUser));
+    } else {
+      localStorage.removeItem('shiphy_current_user');
+    }
   }, [currentUser]);
 
   useEffect(() => {
@@ -153,8 +235,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Backend returns token and user info
       const { token, user } = data;
       
+      // SECURITY: Store token for future requests, strip password from user
       setAuthToken(token);
-      setCurrentUser(user);
+      setCurrentUser(stripPasswordFromUser(user));
 
       // HR requires 2FA (this can be extended based on backend response)
       if (user.role === 'hr') {
