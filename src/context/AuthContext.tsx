@@ -1,7 +1,9 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { User, UserRole, Announcement, SecurityAlert, SystemState } from '@/types/auth';
-import { initialUsers } from '@/data/users';
 import { toast } from 'sonner';
+
+// API configuration - update this to match your backend URL
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -33,14 +35,15 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('shiphy_users');
-    return saved ? JSON.parse(saved) : initialUsers;
-  });
+  const [users, setUsers] = useState<User[]>([]);
   
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('shiphy_current_user');
     return saved ? JSON.parse(saved) : null;
+  });
+
+  const [authToken, setAuthToken] = useState<string | null>(() => {
+    return localStorage.getItem('shiphy_auth_token');
   });
 
   const [systemState, setSystemState] = useState<SystemState>(() => {
@@ -57,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [currentOtp, setCurrentOtp] = useState<string>('');
   const [otpAttempts, setOtpAttempts] = useState(0);
-  const [maxOtpAttempts, setMaxOtpAttempts] = useState(3); // Can be modified via source code
+  const [maxOtpAttempts, setMaxOtpAttempts] = useState(3);
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [hrVerified, setHrVerified] = useState(false);
 
@@ -106,10 +109,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   }, [currentOtp, otpAttempts, maxOtpAttempts, otpCooldown, generateNewOtp]);
 
-  // Persist state
+  // Persist tokens
   useEffect(() => {
-    localStorage.setItem('shiphy_users', JSON.stringify(users));
-  }, [users]);
+    if (authToken) {
+      localStorage.setItem('shiphy_auth_token', authToken);
+    } else {
+      localStorage.removeItem('shiphy_auth_token');
+    }
+  }, [authToken]);
 
   useEffect(() => {
     localStorage.setItem('shiphy_current_user', JSON.stringify(currentUser));
@@ -119,81 +126,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('shiphy_system_state', JSON.stringify(systemState));
   }, [systemState]);
 
-  const login = useCallback((username: string, password: string, isEmergency = false): { success: boolean; message: string } => {
-    const user = users.find(u => u.username === username);
-
-    if (!user) {
-      addSecurityAlert({
-        type: 'login_attempt',
-        severity: 'low',
-        message: `Failed login attempt for non-existent user: ${username}`,
-        username,
-        details: 'User not found in database',
+  // Login via Backend API - passwords are only sent to backend, never stored in frontend
+  const login = useCallback(async (username: string, password: string, isEmergency = false): Promise<{ success: boolean; message: string }> => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
       });
-      return { success: false, message: 'Invalid credentials' };
-    }
 
-    if (user.isBlocked || systemState.blockedUsers.includes(username)) {
-      addSecurityAlert({
-        type: 'unauthorized_access',
-        severity: 'medium',
-        message: `Blocked user attempted login: ${username}`,
-        username,
-      });
-      return { success: false, message: 'Account is blocked. Contact administrator.' };
-    }
+      const data = await response.json();
 
-    // Emergency mode - require emergency password for higher roles
-    if (systemState.emergencyMode && (user.role === 'admin' || user.role === 'boss')) {
-      if (isEmergency) {
-        if (password === user.emergencyPassword) {
-          setCurrentUser(user);
-          setUsers(prev => prev.map(u => 
-            u.username === username ? { ...u, lastLogin: new Date().toISOString(), failedAttempts: 0 } : u
-          ));
-          return { success: true, message: 'Emergency login successful' };
-        }
-        return { success: false, message: 'Invalid emergency password' };
+      if (!response.ok) {
+        addSecurityAlert({
+          type: 'login_attempt',
+          severity: 'low',
+          message: `Failed login attempt for user: ${username}`,
+          username,
+          details: data.error || 'Invalid credentials',
+        });
+        return { success: false, message: data.error || 'Login failed' };
       }
-      return { success: false, message: 'Emergency mode active. Use emergency password.' };
-    }
 
-    // Normal password check
-    if (password === user.password) {
-      // HR requires 2FA
+      // Backend returns token and user info
+      const { token, user } = data;
+      
+      setAuthToken(token);
+      setCurrentUser(user);
+
+      // HR requires 2FA (this can be extended based on backend response)
       if (user.role === 'hr') {
         generateNewOtp();
         return { success: true, message: '2FA_REQUIRED' };
       }
-      
-      setCurrentUser(user);
-      setUsers(prev => prev.map(u => 
-        u.username === username ? { ...u, lastLogin: new Date().toISOString(), failedAttempts: 0 } : u
-      ));
+
       return { success: true, message: 'Login successful' };
+    } catch (error) {
+      console.error('Login error:', error);
+      return { success: false, message: 'Connection error. Please try again.' };
     }
-
-    // Failed attempt
-    setUsers(prev => prev.map(u => 
-      u.username === username ? { ...u, failedAttempts: u.failedAttempts + 1 } : u
-    ));
-
-    const updatedUser = users.find(u => u.username === username);
-    if (updatedUser && updatedUser.failedAttempts >= 4) {
-      addSecurityAlert({
-        type: 'brute_force',
-        severity: 'high',
-        message: `Possible brute force attack detected on: ${username}`,
-        username,
-        details: `${updatedUser.failedAttempts + 1} failed attempts`,
-      });
-    }
-
-    return { success: false, message: 'Invalid credentials' };
-  }, [users, systemState, generateNewOtp]);
+  }, [generateNewOtp]);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
+    setAuthToken(null);
     setHrVerified(false);
   }, []);
 
