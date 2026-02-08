@@ -1,4 +1,5 @@
 import { Users, FileText, Search, Download, Eye, UserCog } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,13 +15,51 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
 export default function HRDashboard() {
-  const { currentUser, users, hrVerified } = useAuth();
+  const { currentUser, authToken } = useAuth();
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!currentUser || !hrVerified) return null;
+  // Fetch HR records from backend
+  useEffect(() => {
+    const fetchRecords = async () => {
+      try {
+        const token = authToken || localStorage.getItem('shiphy_auth_token');
+        if (!token) {
+          setLoading(false);
+          return;
+        }
 
-  // Filter out blue_team users from HR view
-  const visibleUsers = users.filter(u => u.role !== 'blue_team' && u.role !== 'boss');
+        const res = await fetch(`${API_URL}/api/hr/records`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!res.ok) {
+          setLoading(false);
+          return;
+        }
+
+        const data = await res.json();
+        setEmployees(data.records || []);
+      } catch (e) {
+        console.error('Failed to fetch HR records:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRecords();
+  }, [authToken]);
+
+  const user = currentUser || JSON.parse(localStorage.getItem('shiphy_current_user') || '{}');
+  const hrVerified = localStorage.getItem('shiphy_hr_verified') === 'true';
+
+  if (!user || !hrVerified) {
+    return null;
+  }
+
 
   return (
     <DashboardLayout requiredRole="hr">
@@ -46,7 +85,7 @@ export default function HRDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Employees</p>
-                  <p className="text-2xl font-bold">{visibleUsers.length}</p>
+                  <p className="text-2xl font-bold">{employees.length}</p>
                 </div>
                 <Users className="h-8 w-8 text-primary/50" />
               </div>
@@ -57,7 +96,7 @@ export default function HRDashboard() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Interns</p>
-                  <p className="text-2xl font-bold">{visibleUsers.filter(u => u.role === 'intern').length}</p>
+                  <p className="text-2xl font-bold">{employees.filter(u => u.role === 'intern').length}</p>
                 </div>
                 <UserCog className="h-8 w-8 text-blue-400/50" />
               </div>
@@ -67,8 +106,8 @@ export default function HRDashboard() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Active</p>
-                  <p className="text-2xl font-bold">{visibleUsers.filter(u => !u.isBlocked).length}</p>
+                  <p className="text-sm text-muted-foreground">Records Visible</p>
+                  <p className="text-2xl font-bold">{loading ? '...' : employees.length}</p>
                 </div>
                 <div className="status-indicator status-online h-4 w-4" />
               </div>
@@ -78,10 +117,10 @@ export default function HRDashboard() {
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Blocked</p>
-                  <p className="text-2xl font-bold">{visibleUsers.filter(u => u.isBlocked).length}</p>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <p className="text-2xl font-bold">{loading ? 'Loading...' : 'Ready'}</p>
                 </div>
-                <div className="status-indicator status-offline h-4 w-4" />
+                <div className="status-indicator status-online h-4 w-4" />
               </div>
             </CardContent>
           </Card>
@@ -109,41 +148,55 @@ export default function HRDashboard() {
                 <TableRow>
                   <TableHead>Employee</TableHead>
                   <TableHead>ID</TableHead>
+                  <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Department</TableHead>
+                  <TableHead>Mother's Name</TableHead>
+                  <TableHead>DOB</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleUsers.map((user) => (
-                  <TableRow key={user.username}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{user.fullName}</p>
-                        <p className="text-xs text-muted-foreground">{user.email}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-mono text-sm">{user.employeeId}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="capitalize">
-                        {user.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{user.department}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className={`status-indicator ${user.isBlocked ? 'status-offline' : 'status-online'}`} />
-                        {user.isBlocked ? 'Blocked' : 'Active'}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm">
-                        <Eye className="h-4 w-4" />
-                      </Button>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
+                      Loading employee records...
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : employees.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-4 text-muted-foreground">
+                      No employee records found
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  employees.map((emp: any) => (
+                    <TableRow key={emp.username}>
+                      <TableCell>
+                        <div>
+                          <p className="font-medium">{emp.fullName}</p>
+                          <p className="text-xs text-muted-foreground">{emp.email}</p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">{emp.employeeId}</TableCell>
+                      <TableCell className="text-sm">{emp.email}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize">
+                          {emp.role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{emp.department || 'N/A'}</TableCell>
+                      <TableCell className="text-sm font-medium text-primary">{emp.motherName || 'N/A'}</TableCell>
+                      <TableCell className="font-mono text-sm">{emp.dob || 'N/A'}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="status-indicator status-online" />
+                          Active
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </CardContent>

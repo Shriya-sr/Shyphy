@@ -18,7 +18,7 @@ export default function LoginPage() {
   const [show2FA, setShow2FA] = useState(false);
   const [pendingUser, setPendingUser] = useState('');
   
-  const { login, systemState } = useAuth();
+  const { login, nosqlLogin, systemState } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -28,7 +28,14 @@ export default function LoginPage() {
     // Simulate network delay
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    const result = login(username, password, isEmergencyMode);
+    let result;
+
+    // If username looks like a JSON NoSQL payload, use the vulnerable NoSQL endpoint for CTF demo
+    if (username.trim().startsWith('{')) {
+      result = await nosqlLogin(username, password);
+    } else {
+      result = await login(username, password, isEmergencyMode);
+    }
     
     if (result.success) {
       if (result.message === '2FA_REQUIRED') {
@@ -46,8 +53,8 @@ export default function LoginPage() {
           boss: '/dashboard/boss',
           blue_team: '/blue-team',
         };
-        const user = JSON.parse(localStorage.getItem('shiphy_current_user') || '{}');
-        navigate(roleRoutes[user.role] || '/dashboard');
+        const routedUser = result.user ?? JSON.parse(localStorage.getItem('shiphy_current_user') || '{}');
+        navigate(roleRoutes[routedUser.role] || '/');
       }
     } else {
       toast.error(result.message);
@@ -213,6 +220,16 @@ export default function LoginPage() {
               </Link>
             </div>
           )}
+
+          {/* HR Portal Link */}
+          <div className="mt-3 text-center">
+            <Link 
+              to="/hr-login" 
+              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              HR Portal
+            </Link>
+          </div>
         </div>
 
         {/* Security Notice */}

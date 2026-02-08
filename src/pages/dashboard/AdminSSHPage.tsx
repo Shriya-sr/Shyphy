@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Link } from 'react-router-dom';
 
 export default function AdminSSHPage() {
-  const { currentUser } = useAuth();
+  const { currentUser, authToken } = useAuth();
   const [command, setCommand] = useState('');
   const [output, setOutput] = useState<string[]>([
     '╔══════════════════════════════════════════════════════════════╗',
@@ -22,6 +22,35 @@ export default function AdminSSHPage() {
     'Type "help" for available commands.',
     '',
   ]);
+
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const [rotatingFlag, setRotatingFlag] = useState<{ flag: string; validForSeconds: number } | null>(null);
+
+  // Poll rotating flag every second for display
+  useEffect(() => {
+    let cancelled = false;
+    const fetchFlag = async () => {
+      try {
+        if (!authToken) return;
+        const res = await fetch(`${API_URL}/api/ssh/fetch_flag`, {
+          headers: { Authorization: `Bearer ${authToken}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        setRotatingFlag({ flag: data.flag, validForSeconds: data.validForSeconds ?? data.secondsRemaining ?? 0 });
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    fetchFlag();
+    const interval = setInterval(fetchFlag, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [authToken]);
 
   const handleCommand = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,6 +133,28 @@ export default function AdminSSHPage() {
       case 'exit':
         response = ['Closing SSH session... Goodbye!'];
         break;
+      case 'fetch_flag':
+        response = ['Fetching rotating flag from server...'];
+        // Asynchronously fetch and append the live flag when available
+        (async () => {
+          try {
+            if (!authToken) {
+              setOutput(prev => [...prev, `admin@prod-server:~$ ${command}`, 'Error: No auth token available', '']);
+              return;
+            }
+            const res = await fetch(`${API_URL}/api/ssh/fetch_flag`, { headers: { Authorization: `Bearer ${authToken}` } });
+            if (!res.ok) {
+              const err = await res.json().catch(() => ({}));
+              setOutput(prev => [...prev, `admin@prod-server:~$ ${command}`, `Error: ${err.error || 'Failed to fetch flag'}`, '']);
+              return;
+            }
+            const data = await res.json();
+            setOutput(prev => [...prev, `admin@prod-server:~$ ${command}`, `Current Flag: ${data.flag}`, `Valid for: ${data.validForSeconds ?? data.secondsRemaining ?? 0} seconds`, '']);
+          } catch (e) {
+            setOutput(prev => [...prev, `admin@prod-server:~$ ${command}`, 'Error fetching flag', '']);
+          }
+        })();
+        break;
       case '':
         response = [];
         break;
@@ -157,6 +208,22 @@ export default function AdminSSHPage() {
             <span className="text-muted-foreground">prod-server-01.shiphy.internal</span>
           </div>
         </div>
+
+        {/* Live Rotating Flag (Admin Only) */}
+        {rotatingFlag && (
+          <Card className="border border-primary/20 p-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Live Root Flag (rotating)</p>
+                <p className="font-mono text-lg">{rotatingFlag.flag}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Valid for</p>
+                <p className="font-semibold">{rotatingFlag.validForSeconds}s</p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Terminal */}
         <Card className="bg-[hsl(220,25%,5%)] border-border">

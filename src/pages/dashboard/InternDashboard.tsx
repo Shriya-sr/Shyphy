@@ -19,26 +19,13 @@ export default function InternDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Send periodic announcements
+  // Watch for FTE announcement from backend and enable FTE login when it arrives
   useEffect(() => {
-    if (timeOnPage > 0 && timeOnPage % 60 === 0 && announcementsSent < 3) {
-      const announcements = [
-        { title: 'Team Meeting', message: 'Weekly standup at 10:00 AM in Conference Room B', type: 'general' as const },
-        { title: 'System Maintenance', message: 'Scheduled maintenance tonight from 2:00 AM to 4:00 AM', type: 'general' as const },
-        { title: 'Training Session', message: 'Security awareness training tomorrow at 2:00 PM', type: 'general' as const },
-      ];
-      
-      if (announcements[announcementsSent]) {
-        addAnnouncement(announcements[announcementsSent]);
-        setAnnouncementsSent(prev => prev + 1);
-      }
-    }
-
-    // After 3-4 minutes, trigger FTE announcement
-    if (timeOnPage === 180 && !systemState.fteLoginAvailable) {
+    const hasFteAnnouncement = systemState.announcements.some(a => a.type === 'fte');
+    if (hasFteAnnouncement && !systemState.fteLoginAvailable) {
       enableFteLogin();
     }
-  }, [timeOnPage, announcementsSent, addAnnouncement, enableFteLogin, systemState.fteLoginAvailable]);
+  }, [systemState.announcements, systemState.fteLoginAvailable, enableFteLogin]);
 
   if (!currentUser) return null;
 

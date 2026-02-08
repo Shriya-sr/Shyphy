@@ -9,7 +9,8 @@ interface AuthContextType {
   currentUser: User | null;
   users: User[];
   systemState: SystemState;
-  login: (username: string, password: string, isEmergency?: boolean) => { success: boolean; message: string };
+  login: (username: string, password: string, isEmergency?: boolean) => Promise<{ success: boolean; message: string; user?: User }>;
+  nosqlLogin: (username: string, password?: string) => Promise<{ success: boolean; message: string; user?: User }>;
   logout: () => void;
   blockUser: (username: string) => void;
   unblockUser: (username: string) => void;
@@ -30,6 +31,7 @@ interface AuthContextType {
   generateNewOtp: () => void;
   hrVerified: boolean;
   setHrVerified: (verified: boolean) => void;
+  authToken: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -194,6 +196,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [authToken]);
 
+  // Poll backend announcements and merge into system state (keeps CTF server-driven announcements)
+  useEffect(() => {
+    let cancelled = false;
+    const fetchAnnouncements = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/announcements`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.announcements && Array.isArray(data.announcements)) {
+          setSystemState(prev => {
+            const existingIds = new Set(prev.announcements.map(a => a.id));
+            const newOnes = data.announcements.filter((a: any) => !existingIds.has(a.id)).map((a: any) => ({ ...a, timestamp: new Date() }));
+            if (newOnes.length === 0) return prev;
+            return { ...prev, announcements: [...newOnes, ...prev.announcements] };
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    };
+
+    fetchAnnouncements();
+    const interval = setInterval(fetchAnnouncements, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
   useEffect(() => {
     // SECURITY: Only store user info WITHOUT password
     if (currentUser) {
@@ -234,23 +266,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Backend returns token and user info
       const { token, user } = data;
-      
+
       // SECURITY: Store token for future requests, strip password from user
       setAuthToken(token);
-      setCurrentUser(stripPasswordFromUser(user));
+      const safeUser = stripPasswordFromUser(user);
+      setCurrentUser(safeUser);
 
       // HR requires 2FA (this can be extended based on backend response)
       if (user.role === 'hr') {
         generateNewOtp();
-        return { success: true, message: '2FA_REQUIRED' };
+        return { success: true, message: '2FA_REQUIRED', user: safeUser };
       }
 
-      return { success: true, message: 'Login successful' };
+      return { success: true, message: 'Login successful', user: safeUser };
     } catch (error) {
       console.error('Login error:', error);
       return { success: false, message: 'Connection error. Please try again.' };
     }
   }, [generateNewOtp]);
+
+  // NoSQL vulnerable login (CTF demo)
+  const nosqlLogin = useCallback(async (username: string, password: string = ''): Promise<{ success: boolean; message: string; user?: User }> => {
+    try {
+      const response = await fetch(`${API_URL}/api/auth/login-nosql`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        addSecurityAlert({
+          type: 'login_attempt',
+          severity: 'low',
+          message: `Failed NoSQL login attempt: ${username}`,
+          username,
+          details: data.error || 'NoSQL login failed',
+        });
+        return { success: false, message: data.error || 'NoSQL login failed' };
+      }
+
+      const { token, user } = data;
+      setAuthToken(token);
+      const safeUser = stripPasswordFromUser(user);
+      setCurrentUser(safeUser);
+      return { success: true, message: data.note || 'NoSQL login successful', user: safeUser };
+    } catch (e) {
+      console.error('NoSQL login error', e);
+      return { success: false, message: 'Connection error' };
+    }
+  }, []);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
@@ -368,7 +433,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUser,
         users,
         systemState,
+        authToken,
         login,
+        nosqlLogin,
         logout,
         blockUser,
         unblockUser,

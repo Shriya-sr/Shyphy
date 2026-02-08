@@ -1,4 +1,4 @@
-import { ReactNode, useEffect } from 'react';
+import { ReactNode, useEffect, useRef } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { 
   Shield, LogOut, Bell, User, Settings, Home, 
@@ -7,6 +7,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthContext';
 import { UserRole } from '@/types/auth';
+import { toast } from 'sonner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,20 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
   const { currentUser, logout, systemState } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const rejectionToastShown = useRef(false);
+  const fteDecisionToastId = useRef<string | number | null>(null);
+
+  // Reset toast flag when user changes (logs out/logs back in)
+  useEffect(() => {
+    if (!currentUser) {
+      rejectionToastShown.current = false;
+      // Dismiss the FTE decision toast if it was shown
+      if (fteDecisionToastId.current !== null) {
+        toast.dismiss(fteDecisionToastId.current);
+        fteDecisionToastId.current = null;
+      }
+    }
+  }, [currentUser]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -39,14 +54,53 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
     }
   }, [currentUser, requiredRole, navigate]);
 
+  // Show alert when FTE decision announcement appears
+  useEffect(() => {
+  const hasFteDecision = systemState.announcements.some(
+    a => (a as any).type === 'fte_decision'
+
+  );
+
+  const isInternDashboard =
+    currentUser?.role === 'intern' &&
+    location.pathname.startsWith('/dashboard/intern');
+
+  // Show toast only for intern dashboard
+  if (hasFteDecision && isInternDashboard && !rejectionToastShown.current) {
+    rejectionToastShown.current = true;
+    fteDecisionToastId.current = toast.error(
+      'Your FTE Decision Is Ready',
+      {
+        description:
+          'Logout and check the FTE portal to see if you have been hired for full-time employment.',
+        duration: Infinity,
+      }
+    );
+  }
+
+  // Remove toast when leaving intern dashboard or logging out
+  if (!isInternDashboard && fteDecisionToastId.current !== null) {
+    toast.dismiss(fteDecisionToastId.current);
+    fteDecisionToastId.current = null;
+    rejectionToastShown.current = false;
+  }
+}, [systemState.announcements, currentUser, location.pathname]);
+
   if (!currentUser) {
     return null;
   }
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  if (fteDecisionToastId.current !== null) {
+    toast.dismiss(fteDecisionToastId.current);
+    fteDecisionToastId.current = null;
+  }
+  rejectionToastShown.current = false;
+
+  logout();
+  navigate('/login');
+};
+
 
   const roleColors: Record<UserRole, string> = {
     intern: 'text-blue-400',

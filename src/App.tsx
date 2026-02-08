@@ -10,6 +10,7 @@ import { SecurityCleanupAlert } from "@/components/SecurityCleanupAlert";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import FteLoginPage from "./pages/FteLoginPage";
+import HRLoginPage from "./pages/HRLoginPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import NotFound from "./pages/NotFound";
 
@@ -39,6 +40,7 @@ const App = () => (
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/fte-login" element={<FteLoginPage />} />
+            <Route path="/hr-login" element={<HRLoginPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
             {/* Intern Dashboard */}
