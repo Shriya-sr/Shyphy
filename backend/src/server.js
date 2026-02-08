@@ -11,10 +11,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://yourdomain.com'] 
-    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:8080'], // Vite dev server
+  origin: isProduction
+    ? ['https://yourdomain.com']
+    : true, // Allow any origin during local development
   credentials: true,
 }));
 

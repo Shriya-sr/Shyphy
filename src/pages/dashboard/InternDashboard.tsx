@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
 export default function InternDashboard() {
-  const { currentUser, systemState, enableFteLogin, addAnnouncement } = useAuth();
+  const { currentUser, systemState, enableFteLogin } = useAuth();
   const [timeOnPage, setTimeOnPage] = useState(0);
   const [announcementsSent, setAnnouncementsSent] = useState(0);
 
@@ -19,10 +19,10 @@ export default function InternDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // Watch for FTE announcement from backend and enable FTE login when it arrives
+  // Watch for FTE decision announcement and enable FTE login when it arrives
   useEffect(() => {
-    const hasFteAnnouncement = systemState.announcements.some(a => a.type === 'fte');
-    if (hasFteAnnouncement && !systemState.fteLoginAvailable) {
+    const hasFteDecision = systemState.announcements.some(a => a.type === 'fte_decision');
+    if (hasFteDecision && !systemState.fteLoginAvailable) {
       enableFteLogin();
     }
   }, [systemState.announcements, systemState.fteLoginAvailable, enableFteLogin]);

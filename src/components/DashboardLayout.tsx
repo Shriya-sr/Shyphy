@@ -57,8 +57,7 @@ export default function DashboardLayout({ children, requiredRole }: DashboardLay
   // Show alert when FTE decision announcement appears
   useEffect(() => {
   const hasFteDecision = systemState.announcements.some(
-    a => (a as any).type === 'fte_decision'
-
+    a => a.type === 'fte_decision'
   );
 
   const isInternDashboard =

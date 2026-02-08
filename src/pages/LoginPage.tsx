@@ -210,7 +210,7 @@ export default function LoginPage() {
           </div>
 
           {/* FTE Login Link */}
-          {systemState.fteLoginAvailable && (
+          {systemState.fteDecisionReady && (
             <div className="mt-4 pt-4 border-t border-border text-center">
               <Link 
                 to="/fte-login" 

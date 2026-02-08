@@ -22,7 +22,7 @@ export interface Announcement {
   title: string;
   message: string;
   timestamp: Date;
-  type: 'general' | 'urgent' | 'fte' | 'security';
+  type: 'general' | 'urgent' | 'fte' | 'fte_decision' | 'security';
   forRoles?: UserRole[];
 }
 
@@ -39,6 +39,7 @@ export interface SecurityAlert {
 export interface SystemState {
   emergencyMode: boolean;
   fteLoginAvailable: boolean;
+  fteDecisionReady: boolean;
   blockedUsers: string[];
   securityLevel: 'normal' | 'elevated' | 'lockdown';
   announcements: Announcement[];

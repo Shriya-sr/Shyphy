@@ -23,7 +23,7 @@ export default function AdminSSHPage() {
     '',
   ]);
 
-  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+  const API_URL = import.meta.env.VITE_API_URL || '';
   const [rotatingFlag, setRotatingFlag] = useState<{ flag: string; validForSeconds: number } | null>(null);
 
   // Poll rotating flag every second for display

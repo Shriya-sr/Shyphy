@@ -1,9 +1,9 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { User, UserRole, Announcement, SecurityAlert, SystemState } from '@/types/auth';
 import { toast } from 'sonner';
 
 // API configuration - update this to match your backend URL
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || '';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -103,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const [users, setUsers] = useState<User[]>([]);
+  const internSessionStartRef = useRef<number | null>(null);
+  const internFteTimerRef = useRef<number | null>(null);
   
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('shiphy_current_user');
@@ -125,15 +127,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [systemState, setSystemState] = useState<SystemState>(() => {
-    const saved = localStorage.getItem('shiphy_system_state');
-    return saved ? JSON.parse(saved) : {
+    const defaults: SystemState = {
       emergencyMode: false,
       fteLoginAvailable: false,
+      fteDecisionReady: false,
       blockedUsers: [],
       securityLevel: 'normal',
       announcements: [],
       securityAlerts: [],
     };
+
+    const saved = localStorage.getItem('shiphy_system_state');
+    if (!saved) return defaults;
+
+    try {
+      const parsed = JSON.parse(saved);
+      return {
+        ...defaults,
+        ...parsed,
+        announcements: Array.isArray(parsed?.announcements) ? parsed.announcements : [],
+        securityAlerts: Array.isArray(parsed?.securityAlerts) ? parsed.securityAlerts : [],
+      };
+    } catch {
+      return defaults;
+    }
   });
 
   const [currentOtp, setCurrentOtp] = useState<string>('');
@@ -141,6 +158,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [maxOtpAttempts, setMaxOtpAttempts] = useState(3);
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [hrVerified, setHrVerified] = useState(false);
+
+  const clearInternFteTimer = useCallback(() => {
+    if (internFteTimerRef.current !== null) {
+      window.clearTimeout(internFteTimerRef.current);
+      internFteTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleInternFteDecision = useCallback(() => {
+    clearInternFteTimer();
+    internFteTimerRef.current = window.setTimeout(() => {
+      setSystemState(prev => {
+        const alreadyDecision = prev.announcements.some(a => a.type === 'fte_decision');
+        const nextAnnouncements = alreadyDecision
+          ? prev.announcements
+          : [
+              {
+                id: `ann_${Date.now()}`,
+                title: 'Your FTE Decision Is Ready',
+                message: 'Logout and check the FTE portal to see if you have been hired for full-time employment.',
+                type: 'fte_decision',
+                timestamp: new Date(),
+              },
+              ...prev.announcements,
+            ];
+        return {
+          ...prev,
+          fteLoginAvailable: true,
+          fteDecisionReady: true,
+          announcements: nextAnnouncements,
+        };
+      });
+    }, 60 * 1000);
+  }, [clearInternFteTimer]);
 
   // Generate OTP
   const generateNewOtp = useCallback(() => {
@@ -206,11 +257,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         if (cancelled) return;
         if (data.announcements && Array.isArray(data.announcements)) {
+          const shouldDelayFte =
+            currentUser?.role === 'intern' &&
+            internSessionStartRef.current !== null &&
+            Date.now() - internSessionStartRef.current < 60 * 1000;
+
           setSystemState(prev => {
             const existingIds = new Set(prev.announcements.map(a => a.id));
-            const newOnes = data.announcements.filter((a: any) => !existingIds.has(a.id)).map((a: any) => ({ ...a, timestamp: new Date() }));
+            const hasLocalDecision = prev.announcements.some(a => a.type === 'fte_decision');
+            const newOnes = data.announcements
+              .filter((a: any) => !existingIds.has(a.id))
+              .filter((a: any) => {
+                if (a.type === 'fte' || a.type === 'fte_decision') {
+                  if (shouldDelayFte || hasLocalDecision) return false;
+                }
+                return true;
+              })
+              .map((a: any) => ({
+                ...a,
+                message: a.message ?? a.body ?? '',
+                timestamp: new Date(),
+              }));
             if (newOnes.length === 0) return prev;
-            return { ...prev, announcements: [...newOnes, ...prev.announcements] };
+            const hasNewDecision = newOnes.some(a => a.type === 'fte_decision');
+            return {
+              ...prev,
+              fteDecisionReady: hasNewDecision || prev.fteDecisionReady,
+              fteLoginAvailable: hasNewDecision ? true : prev.fteLoginAvailable,
+              announcements: [...newOnes, ...prev.announcements],
+            };
           });
         }
       } catch (e) {
@@ -224,7 +299,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, []);
+  }, [currentUser?.role]);
 
   useEffect(() => {
     // SECURITY: Only store user info WITHOUT password
@@ -272,6 +347,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const safeUser = stripPasswordFromUser(user);
       setCurrentUser(safeUser);
 
+      if (user.role === 'intern') {
+        internSessionStartRef.current = Date.now();
+        setSystemState(prev => ({
+          ...prev,
+          fteLoginAvailable: false,
+          fteDecisionReady: false,
+          announcements: prev.announcements.filter(a => a.type !== 'fte' && a.type !== 'fte_decision'),
+        }));
+        scheduleInternFteDecision();
+      } else {
+        internSessionStartRef.current = null;
+        clearInternFteTimer();
+      }
+
       // HR requires 2FA (this can be extended based on backend response)
       if (user.role === 'hr') {
         generateNewOtp();
@@ -283,7 +372,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Login error:', error);
       return { success: false, message: 'Connection error. Please try again.' };
     }
-  }, [generateNewOtp]);
+  }, [clearInternFteTimer, generateNewOtp, scheduleInternFteDecision]);
 
   // NoSQL vulnerable login (CTF demo)
   const nosqlLogin = useCallback(async (username: string, password: string = ''): Promise<{ success: boolean; message: string; user?: User }> => {
@@ -321,7 +410,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCurrentUser(null);
     setAuthToken(null);
     setHrVerified(false);
-  }, []);
+    internSessionStartRef.current = null;
+    clearInternFteTimer();
+  }, [clearInternFteTimer]);
 
   const blockUser = useCallback((username: string) => {
     setSystemState(prev => ({
@@ -381,6 +472,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSystemState(prev => ({
       ...prev,
       fteLoginAvailable: true,
+      fteDecisionReady: true,
     }));
     addAnnouncement({
       title: 'FTE Conversion Portal Now Open',
