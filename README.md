@@ -1,4 +1,4 @@
-# 🧨 Intern Portal CTF – Vulnerable Authentication & FTE System
+# 🧨 Shyphy – Vulnerable Authentication & FTE System
 
 A deliberately vulnerable full-stack web application designed for **Capture The Flag (CTF)** style security exploration.
 
