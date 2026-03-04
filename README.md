@@ -40,3 +40,8 @@ Participants must:
 - **bcrypt**
 - **CORS**
 - **dotenv**
+
+## 🚧 Work in Progress
+
+This project is still under development.  
+Some parts of the CTF flow may not function exactly as intended yet due to ongoing fixes and improvements.
