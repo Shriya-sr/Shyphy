@@ -4,11 +4,18 @@ import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export default function InternDashboard() {
   const { currentUser, systemState, enableFteLogin } = useAuth();
   const [timeOnPage, setTimeOnPage] = useState(0);
-  const [announcementsSent, setAnnouncementsSent] = useState(0);
+  const [showDecisionPopup, setShowDecisionPopup] = useState(false);
 
   // Simulate real-time announcements
   useEffect(() => {
@@ -25,12 +32,29 @@ export default function InternDashboard() {
     if (hasFteDecision && !systemState.fteLoginAvailable) {
       enableFteLogin();
     }
+
+    if (hasFteDecision && !sessionStorage.getItem('shiphy_fte_popup_seen')) {
+      setShowDecisionPopup(true);
+      sessionStorage.setItem('shiphy_fte_popup_seen', 'true');
+    }
   }, [systemState.announcements, systemState.fteLoginAvailable, enableFteLogin]);
 
   if (!currentUser) return null;
 
   return (
     <DashboardLayout requiredRole="intern">
+      <Dialog open={showDecisionPopup} onOpenChange={setShowDecisionPopup}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>FTE Decision Ready</DialogTitle>
+            <DialogDescription>
+              Please logout now and visit the FTE Conversion Portal to view your result.
+              Your intern account will remain frozen until an admin override is completed.
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
+
       <div className="max-w-7xl mx-auto space-y-6">
         {/* Welcome Header */}
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">

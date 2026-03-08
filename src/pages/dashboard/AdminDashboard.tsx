@@ -2,20 +2,33 @@ import {
   Users, Shield, Terminal, Settings, Lock, 
   AlertTriangle, Server, Activity, Key
 } from 'lucide-react';
+import { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Link } from 'react-router-dom';
+import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 
 export default function AdminDashboard() {
-  const { currentUser, users, systemState } = useAuth();
+  const { currentUser, users, systemState, unlockFinalCtf } = useAuth();
+  const [overrideCode, setOverrideCode] = useState('');
 
   if (!currentUser) return null;
 
   const activeUsers = users.filter(u => !u.isBlocked).length;
   const blockedUsers = users.filter(u => u.isBlocked).length;
+
+  const submitOverride = () => {
+    const result = unlockFinalCtf(overrideCode);
+    if (result.success) {
+      toast.success(result.message);
+      return;
+    }
+    toast.error(result.message);
+  };
 
   return (
     <DashboardLayout requiredRole="admin">
@@ -206,6 +219,36 @@ export default function AdminDashboard() {
                 <p>Administrator</p>
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-primary/30">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Key className="h-5 w-5 text-primary" />
+              Final CTF: Intern Override Console
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Enter the override token to re-enable the frozen intern account.
+              Token format hint: [ADMIN_MOTHER_4][ADMIN_DOB_DDMMYYYY]-ELEVATE
+            </p>
+            <div className="flex gap-2">
+              <Input
+                value={overrideCode}
+                onChange={(e) => setOverrideCode(e.target.value)}
+                placeholder="XXXXDDMMYYYY-ELEVATE"
+              />
+              <Button onClick={submitOverride}>Apply</Button>
+            </div>
+
+            {systemState.finalCtfUnlocked && (
+              <div className="rounded-lg border border-primary/30 bg-primary/10 p-3">
+                <p className="text-sm font-medium">CTF Complete</p>
+                <p className="font-mono text-sm mt-1">SHIPHY{'{intern_override_chain_complete}'}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

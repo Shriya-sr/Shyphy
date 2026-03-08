@@ -146,6 +146,9 @@ export default function FteLoginPage() {
                 We're sorry to inform you that you've been <strong>rejected</strong> by the CEO 
                 as per criteria of qualification and advice of the Vice CEO.
               </p>
+              <p className="text-sm text-foreground leading-relaxed mt-3">
+                Your intern account is now temporarily <strong>frozen</strong> pending administrative review.
+              </p>
             </div>
 
             <div className="space-y-2 text-sm text-muted-foreground">

@@ -40,6 +40,8 @@ export interface SystemState {
   emergencyMode: boolean;
   fteLoginAvailable: boolean;
   fteDecisionReady: boolean;
+  internAccountFrozen: boolean;
+  finalCtfUnlocked: boolean;
   blockedUsers: string[];
   securityLevel: 'normal' | 'elevated' | 'lockdown';
   announcements: Announcement[];

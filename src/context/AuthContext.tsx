@@ -32,6 +32,7 @@ interface AuthContextType {
   hrVerified: boolean;
   setHrVerified: (verified: boolean) => void;
   authToken: string | null;
+  unlockFinalCtf: (overrideCode: string) => { success: boolean; message: string };
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -131,6 +132,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       emergencyMode: false,
       fteLoginAvailable: false,
       fteDecisionReady: false,
+      internAccountFrozen: false,
+      finalCtfUnlocked: false,
       blockedUsers: [],
       securityLevel: 'normal',
       announcements: [],
@@ -187,6 +190,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...prev,
           fteLoginAvailable: true,
           fteDecisionReady: true,
+          internAccountFrozen: true,
+          blockedUsers: prev.blockedUsers.includes('intern_001')
+            ? prev.blockedUsers
+            : [...prev.blockedUsers, 'intern_001'],
           announcements: nextAnnouncements,
         };
       });
@@ -317,6 +324,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Login via Backend API - passwords are only sent to backend, never stored in frontend
   const login = useCallback(async (username: string, password: string, isEmergency = false): Promise<{ success: boolean; message: string }> => {
+    if (username === 'intern_001' && systemState.internAccountFrozen) {
+      return {
+        success: false,
+        message: 'Intern account frozen after FTE rejection. Complete the CTF admin override to re-enable access.',
+      };
+    }
+
     try {
       const response = await fetch(`${API_URL}/api/auth/login`, {
         method: 'POST',
@@ -353,6 +367,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...prev,
           fteLoginAvailable: false,
           fteDecisionReady: false,
+          internAccountFrozen: false,
+          blockedUsers: prev.blockedUsers.filter(u => u !== user.username),
           announcements: prev.announcements.filter(a => a.type !== 'fte' && a.type !== 'fte_decision'),
         }));
         scheduleInternFteDecision();
@@ -372,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error('Login error:', error);
       return { success: false, message: 'Connection error. Please try again.' };
     }
-  }, [clearInternFteTimer, generateNewOtp, scheduleInternFteDecision]);
+  }, [clearInternFteTimer, generateNewOtp, scheduleInternFteDecision, systemState.internAccountFrozen]);
 
   // NoSQL vulnerable login (CTF demo)
   const nosqlLogin = useCallback(async (username: string, password: string = ''): Promise<{ success: boolean; message: string; user?: User }> => {
@@ -519,6 +535,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const unlockFinalCtf = useCallback((overrideCode: string) => {
+    const normalized = overrideCode.trim().toUpperCase();
+    const expected = 'SHEE22031985-ELEVATE';
+
+    if (normalized !== expected) {
+      return { success: false, message: 'Invalid override token. Re-check HR records + onboarding clues.' };
+    }
+
+    setSystemState(prev => ({
+      ...prev,
+      finalCtfUnlocked: true,
+      internAccountFrozen: false,
+      blockedUsers: prev.blockedUsers.filter(u => u !== 'intern_001'),
+      announcements: [
+        {
+          id: `ann_${Date.now()}`,
+          title: 'CTF OVERRIDE ACCEPTED',
+          message: 'Intern account access restored by admin override console.',
+          type: 'security',
+          timestamp: new Date(),
+        },
+        ...prev.announcements,
+      ],
+    }));
+
+    return { success: true, message: 'Override accepted. Intern account has been re-enabled.' };
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -548,6 +592,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         generateNewOtp,
         hrVerified,
         setHrVerified,
+        unlockFinalCtf,
       }}
     >
       {children}
