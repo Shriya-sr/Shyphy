@@ -60,7 +60,7 @@ FLAG_SECRET=shi_core_secret
 
 **Timeline:**
 - At 0 seconds: Welcome announcement appears
-- At 2 minutes (120 seconds): **FTE Portal announcement** appears
+- At 1 minute (60 seconds): **FTE Portal announcement** appears
   - This is the psychological trigger
   - Motivates attacker to try the FTE portal
 

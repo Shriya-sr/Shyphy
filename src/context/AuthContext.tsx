@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 
 // API configuration - update this to match your backend URL
 const API_URL = import.meta.env.VITE_API_URL || '';
+const FTE_UNLOCK_KEY = 'shiphy_fte_unlocked';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -142,9 +143,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       const parsed = JSON.parse(saved);
+      const fteUnlocked = localStorage.getItem(FTE_UNLOCK_KEY) === 'true';
       return {
         ...defaults,
         ...parsed,
+        fteLoginAvailable: fteUnlocked ? Boolean(parsed?.fteLoginAvailable) : false,
+        fteDecisionReady: fteUnlocked ? Boolean(parsed?.fteDecisionReady) : false,
         announcements: Array.isArray(parsed?.announcements) ? parsed.announcements : [],
         securityAlerts: Array.isArray(parsed?.securityAlerts) ? parsed.securityAlerts : [],
       };
@@ -169,6 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const scheduleInternFteDecision = useCallback(() => {
     clearInternFteTimer();
     internFteTimerRef.current = window.setTimeout(() => {
+      localStorage.setItem(FTE_UNLOCK_KEY, 'true');
       setSystemState(prev => {
         const alreadyDecision = prev.announcements.some(a => a.type === 'fte_decision');
         const nextAnnouncements = alreadyDecision
@@ -257,19 +262,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         if (cancelled) return;
         if (data.announcements && Array.isArray(data.announcements)) {
-          const shouldDelayFte =
-            currentUser?.role === 'intern' &&
-            internSessionStartRef.current !== null &&
-            Date.now() - internSessionStartRef.current < 60 * 1000;
-
           setSystemState(prev => {
             const existingIds = new Set(prev.announcements.map(a => a.id));
-            const hasLocalDecision = prev.announcements.some(a => a.type === 'fte_decision');
             const newOnes = data.announcements
               .filter((a: any) => !existingIds.has(a.id))
               .filter((a: any) => {
                 if (a.type === 'fte' || a.type === 'fte_decision') {
-                  if (shouldDelayFte || hasLocalDecision) return false;
+                  // FTE flow is controlled client-side per intern session.
+                  // Ignore server-wide FTE announcements so the login page does not
+                  // expose the FTE portal before an intern actually logs in.
+                  return false;
                 }
                 return true;
               })
@@ -279,11 +281,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 timestamp: new Date(),
               }));
             if (newOnes.length === 0) return prev;
-            const hasNewDecision = newOnes.some(a => a.type === 'fte_decision');
             return {
               ...prev,
-              fteDecisionReady: hasNewDecision || prev.fteDecisionReady,
-              fteLoginAvailable: hasNewDecision ? true : prev.fteLoginAvailable,
               announcements: [...newOnes, ...prev.announcements],
             };
           });
@@ -349,6 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (user.role === 'intern') {
         internSessionStartRef.current = Date.now();
+        localStorage.setItem(FTE_UNLOCK_KEY, 'false');
         setSystemState(prev => ({
           ...prev,
           fteLoginAvailable: false,
@@ -469,6 +469,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const enableFteLogin = useCallback(() => {
+    localStorage.setItem(FTE_UNLOCK_KEY, 'true');
     setSystemState(prev => ({
       ...prev,
       fteLoginAvailable: true,
